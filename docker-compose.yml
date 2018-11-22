@@ -1,0 +1,9 @@
+version: '3.7'
+services:
+  jenkins-autoscaler:
+    image:  nexus.corp.dmz:8083/jenkins-autoscaler:local
+    volumes:
+      - .:/srv/app:Z
+      - ~/.aws:/root/.aws:Z
+    working_dir: /srv/app
+    env_file: .env
