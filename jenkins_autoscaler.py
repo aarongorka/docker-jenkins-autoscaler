@@ -12,8 +12,8 @@ def put_cw_metrics(master, username, password, url):
 
     dimensions = [{"Name": "JenkinsMaster", "Value": master}]
     cloudwatch = boto3.client('cloudwatch')
-    r = requests.get("{}/computer/api/python?pretty=true".format(url), auth=(username, password))
-    computer_info = ast.literal_eval(r.text)
+    r = requests.get("{}/computer/api/json".format(url), auth=(username, password))
+    computer_info = r.json()
     available = computer_info["totalExecutors"] - computer_info["busyExecutors"]
     print(json.dumps({"message": "got number of executors", "available": available, "busy": computer_info["busyExecutors"]}))
     response = cloudwatch.put_metric_data(
@@ -63,11 +63,19 @@ def protect_busy_nodes(username, password, url):
 def set_protection_from_displayname(displayname, is_protected):
     """Sets scale-in protection from a given display name i.e. `ip-10-212-11-36.ap-southeast-2.compute.internal-57934174`"""
 
+    fdqn = ""
+    hostname = ""
+    instance = {}
+
     asg = boto3.client('autoscaling')
     ec2 = boto3.client('ec2')
-    hostname = displayname.rsplit('-', 1)[0]  # Jenkins adds some string like `-23452345` to the hostname
-    filters = [{"Name": "private-dns-name", "Values": [hostname]}]
-    instance = ec2.describe_instances(Filters=filters)['Reservations'][0]['Instances'][0]
+    fqdn = displayname.rsplit('-', 1)[0]  # Jenkins adds some string like `-23452345` to the hostname
+    hostname = fqdn.split('.', 1)[0]  # search domains configured on the host may result in a different FDQN for that host than the AWS private DNS name e.g. `ip-10-77-33-147.example`
+    filters = [{"Name": "private-dns-name", "Values": [hostname + '*']}]
+    try:
+        instance = ec2.describe_instances(Filters=filters)['Reservations'][0]['Instances'][0]
+    except IndexError:
+        print(json.dumps({"message": "could not find instance".format(region), "node": displayname, "fdqn": fqdn, "hostname": hostname, "instance": instance}))
     id = instance['InstanceId']
     asg_name = [x for x in instance['Tags'] if x['Key'] == 'aws:autoscaling:groupName'][0]['Value']
     asg.set_instance_protection(InstanceIds=[id], AutoScalingGroupName=asg_name, ProtectedFromScaleIn=is_protected)
